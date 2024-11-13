@@ -7,7 +7,7 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - CHAT_ID=${CHAT_ID}
-      - CRON_SCHEDULE="*/5 * * * *"
+      - CRON_SCHEDULE=${CRON_SCHEDULE}
     volumes:
       - ./data:/app/data
     entrypoint: ["/bin/bash", "-c", "echo '$CRON_SCHEDULE /app/run_get_posts.sh >> /var/log/cron.log 2>&1' > /etc/cron.d/ebay_alert && chmod 0644 /etc/cron.d/ebay_alert && crontab /etc/cron.d/ebay_alert && cron && python main.py"]
