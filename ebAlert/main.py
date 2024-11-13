@@ -1,6 +1,7 @@
 import os
 import sys
 import schedule
+from datetime import datetime
 from time import sleep
 from threading import Thread
 from ebAlert.telegram.telegramclass import telegram_bot
@@ -37,24 +38,38 @@ def listen():
                 telegram_bot.handle_command(chat_id, command)
         sleep(2)
 
-def schedule_start(cron_schedule):
-    """Schedule the start function based on the cron expression."""
-    schedule.every().day.at(cron_schedule).do(get_all_post)
+def within_quiet_hours(quiet_start, quiet_end):
+    """Check if the current time is within the quiet hours."""
+    now = datetime.now().time()
+    start = datetime.strptime(quiet_start, "%H:%M").time()
+    end = datetime.strptime(quiet_end, "%H:%M").time()
+    
+    if start < end:
+        return start <= now <= end
+    else:
+        # Handles overnight quiet hours (e.g., 23:00 to 07:00)
+        return now >= start or now <= end
+
+def schedule_start(interval_minutes, quiet_start, quiet_end):
+    """Schedule the get_all_post function based on the interval."""
     while True:
-        schedule.run_pending()
-        sleep(1)
+        if not within_quiet_hours(quiet_start, quiet_end):
+            get_all_post()
+        sleep(interval_minutes * 60)
 
 if __name__ == "__main__":
-    mode = os.getenv("MODE", "listen")
-    cron_schedule = os.getenv("CRON_SCHEDULE", "00:00")
+    # Environment variables for configuration
+    interval_minutes = int(os.getenv("INTERVAL_MINUTES", 5))
+    quiet_hours_start = os.getenv("QUIET_HOURS_START", "23:00")
+    quiet_hours_end = os.getenv("QUIET_HOURS_END", "07:00")
 
-    if mode == "listen":
-        telegram_thread = Thread(target=listen)
-        telegram_thread.start()
+    # Start the Telegram listener in a separate thread
+    telegram_thread = Thread(target=listen)
+    telegram_thread.start()
 
-    elif mode == "start":
-        schedule_thread = Thread(target=schedule_start, args=(cron_schedule,))
-        schedule_thread.start()
+    # Start the scheduled task in a separate thread
+    schedule_thread = Thread(target=schedule_start, args=(interval_minutes, quiet_hours_start, quiet_hours_end))
+    schedule_thread.start()
 
     try:
         while True:
