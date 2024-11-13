@@ -48,17 +48,14 @@ if __name__ == "__main__":
     mode = os.getenv("MODE", "listen")
     cron_schedule = os.getenv("CRON_SCHEDULE", "00:00")
 
-    # Start Telegram listener in a separate thread
     if mode == "listen":
         telegram_thread = Thread(target=listen)
         telegram_thread.start()
 
-    # Schedule periodic job using the CRON_SCHEDULE environment variable
-    if mode == "start":
+    elif mode == "start":
         schedule_thread = Thread(target=schedule_start, args=(cron_schedule,))
         schedule_thread.start()
 
-    # Keep the main thread running
     try:
         while True:
             sleep(10)
