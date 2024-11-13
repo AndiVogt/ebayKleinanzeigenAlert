@@ -1,96 +1,67 @@
+import os
 import sys
-from random import randint
+import schedule
 from time import sleep
-
-from sqlalchemy.orm import Session
-
+from threading import Thread
+from ebAlert.telegram.telegramclass import telegram_bot
 from ebAlert import create_logger
-from ebAlert.crud.base import crud_link, get_session
+from ebAlert.crud.base import get_session
 from ebAlert.crud.post import crud_post
 from ebAlert.ebayscrapping import ebayclass
-from ebAlert.telegram.telegramclass import telegram
 
 log = create_logger(__name__)
 
-try:
-    import click
-    from click import BaseCommand
-except ImportError:
-    log.error("Click should be installed\npip install click")
-
-
-@click.group()
-def cli() -> BaseCommand:
-    pass
-
-
-@cli.command(help="Fetch new post and send telegramclass notification.")
-def start():
-    """
-    loop through the urls in the database and send message
-    """
-    print(">> Starting Ebay alert")
+def get_all_post():
+    """Fetch new posts and send Telegram notifications."""
     with get_session() as db:
-        get_all_post(db=db, telegram_message=True)
-    print("<< Ebay alert finished")
-
-
-@cli.command(options_metavar="<options>", help="Add/Show/Remove URL from database.")
-@click.option("-r", "--remove_link", 'remove', metavar="<link id>", help="Remove link from database.")
-@click.option("-c", "--clear", is_flag=True, help="Clear post database.")
-@click.option("-a", "--add_url", 'url', metavar='<URL>', help="Add URL to database and fetch posts.")
-@click.option("-i", "--init", is_flag=True, help="Initialise database after clearing.")
-@click.option("-s", "--show", is_flag=True, help="Show all urls and corresponding id.")
-def links(show, remove, clear, url, init):
-    """
-    cli related to the links. Add, remove, clear, init and show
-    """
-    # TODO: Add verification if action worked.
-    with get_session() as db:
-        if show:
-            print(">> List of URL")
-            links = crud_link.get_all(db)
-            if links:
-                for link_model in links:
-                    print("{0:<{1}}{2}".format(link_model.id, 8 - len(str(link_model.id)), link_model.link))
-            print("<< List of URL")
-        elif remove:
-            print(">> Removing link")
-            if crud_link.remove(db=db, id=remove):
-                print("<< Link removed")
-            else:
-                print("<< No link found")
-        elif clear:
-            print(">> Clearing item database")
-            crud_post.clear_database(db=db)
-            print("<< Database cleared")
-        elif url:
-            print(">> Adding url")
-            if crud_link.get_by_key(key_mapping={"link": url}, db=db):
-                print("<< Link already exists")
-            else:
-                crud_link.create({"link": url}, db)
-                ebay_items = ebayclass.EbayItemFactory(url)
-                crud_post.add_items_to_db(db, ebay_items.item_list)
-                print("<< Link and post added to the database")
-        elif init:
-            print(">> Initializing database")
-            get_all_post(db)
-            print("<< Database initialized")
-
-
-def get_all_post(db: Session, telegram_message=False):
-    links = crud_link.get_all(db=db)
-    if links:
-        for link_model in links:
-            print("Processing link - id: {} - link: {} ".format(link_model.id, link_model.link))
-            post_factory = ebayclass.EbayItemFactory(link_model.link)
-            items = crud_post.add_items_to_db(db=db, items=post_factory.item_list)
-            if telegram_message:
+        links = crud_link.get_all(db=db)
+        if links:
+            for link_model in links:
+                print(f"Processing link - id: {link_model.id} - link: {link_model.link}")
+                post_factory = ebayclass.EbayItemFactory(link_model.link)
+                items = crud_post.add_items_to_db(db=db, items=post_factory.item_list)
                 for item in items:
-                    telegram.send_formated_message(item)
-            sleep(randint(0, 40)/10)
+                    telegram_bot.send_formated_message(item)
 
+def listen():
+    """Continuously listen for Telegram commands."""
+    print(">> Listening for Telegram commands")
+    offset = None
+    while True:
+        updates = telegram_bot.get_updates(offset)
+        for update in updates:
+            offset = update['update_id'] + 1
+            if 'message' in update and 'text' in update['message']:
+                chat_id = update['message']['chat']['id']
+                command = update['message']['text']
+                telegram_bot.handle_command(chat_id, command)
+        sleep(2)
+
+def schedule_start(cron_schedule):
+    """Schedule the start function based on the cron expression."""
+    schedule.every().day.at(cron_schedule).do(get_all_post)
+    while True:
+        schedule.run_pending()
+        sleep(1)
 
 if __name__ == "__main__":
-    cli(sys.argv[1:])
+    mode = os.getenv("MODE", "listen")
+    cron_schedule = os.getenv("CRON_SCHEDULE", "00:00")
+
+    # Start Telegram listener in a separate thread
+    if mode == "listen":
+        telegram_thread = Thread(target=listen)
+        telegram_thread.start()
+
+    # Schedule periodic job using the CRON_SCHEDULE environment variable
+    if mode == "start":
+        schedule_thread = Thread(target=schedule_start, args=(cron_schedule,))
+        schedule_thread.start()
+
+    # Keep the main thread running
+    try:
+        while True:
+            sleep(10)
+    except KeyboardInterrupt:
+        print("Shutting down...")
+        sys.exit(0)
