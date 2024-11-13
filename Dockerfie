@@ -6,5 +6,8 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app/
+COPY run_get_posts.sh /app/run_get_posts.sh
+
+RUN apt-get update && apt-get install -y cron
 
 CMD ["python", "main.py"]
