@@ -9,6 +9,8 @@ class Settings:
     TELEGRAM_API_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={CHAT_ID}&parse_mode=HTML&"""
     LOGGING = os.environ.get("LOGGING") or logging.ERROR
     URL_BASE = "https://www.kleinanzeigen.de"
+    MODE = os.getenv("MODE", "listen")
+    CRON_SCHEDULE = os.getenv("CRON_SCHEDULE", "00:00")
 
 
 settings = Settings()
